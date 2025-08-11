@@ -39,71 +39,118 @@ uniform float uVox[4];    // [저역(F0), formant1, formant2, sibilance]
 // 챗봇 pending 상태 (JS에서 EMA로 부드럽게 보냄: 0~1)
 uniform float uPending;
 
-void main(){
-  // 원본과 동일한 좌표 사용
-  vec2 I = vUV * iResolution.xy;
+// RGB → HSL 변환
+vec3 rgb2hsl(vec3 c) {
+    float maxc = max(max(c.r, c.g), c.b);
+    float minc = min(min(c.r, c.g), c.b);
+    float l = (maxc + minc) * 0.5;
+    if (maxc == minc) return vec3(0.0, 0.0, l);
+    float d = maxc - minc;
+    float s = l > 0.5 ? d / (2.0 - maxc - minc) : d / (maxc + minc);
+    float h = 0.0;
+    if (maxc == c.r) h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0);
+    else if (maxc == c.g) h = (c.b - c.r) / d + 2.0;
+    else h = (c.r - c.g) / d + 4.0;
+    h /= 6.0;
+    return vec3(h, s, l);
+}
 
-  // --- pending에 따른 속도/반응 스케일 ---
-  // calm = 0(평상시) → 1(대기 중)
-  float calm = clamp(uPending, 0.0, 1.0);
+// HSL → RGB 변환
+vec3 hsl2rgb(vec3 c) {
+    float h = c.x, s = c.y, l = c.z;
+    float r, g, b;
 
-  // 시간 속도: 대기 중 25%
-  float t = uTimeEff;
+    if (s == 0.0) {
+        r = g = b = l;
+    } else {
+        float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
+        float p = 2.0 * l - q;
+        float hk = fract(h);
 
-  // 난류 위상: 대기 중 거의 0 (말해도 흔들림 최소)
-  float speakPhaseActive =
-      0.05 * (uLevel + 0.5*uVox[1]);     // 평상시(아주 작음)
-  float speakPhase = mix(speakPhaseActive, 0.0, calm);
+        float t[3];
+        t[0] = hk + 1.0/3.0;
+        t[1] = hk;
+        t[2] = hk - 1.0/3.0;
 
-  // 색상 반응 강화(평상시) ↔ 대기 중에는 크게 억제
-  vec4 colorPhaseActive = vec4(
-    2.0*uVox[0] + 1.2*uVox[2],     // R: 저역 + 중고역
-    1.5*uVox[1] + 0.8*uVox[3],     // G: formant1 + 치찰음
-    1.8*uVox[2] - 0.6*uVox[0],     // B: formant2 + 저역 반전
-    0.0
-  );
-  vec4 colorPhase = mix(colorPhaseActive, vec4(0.15*uLevel), calm);
+        for (int i = 0; i < 3; i++) {
+            if (t[i] < 0.0) t[i] += 1.0;
+            if (t[i] > 1.0) t[i] -= 1.0;
+            if (t[i] < 1.0/6.0) t[i] = p + (q - p) * 6.0 * t[i];
+            else if (t[i] < 0.5) t[i] = q;
+            else if (t[i] < 2.0/3.0) t[i] = p + (q - p) * (2.0/3.0 - t[i]) * 6.0;
+            else t[i] = p;
+        }
 
-  // 전체 밝기 게인: 평상시 강하게, 대기 중엔 거의 고정
-  float colorGainActive = 1.0 + 1.5*uLevel + 0.5*uVox[3];
-  float colorGain = mix(colorGainActive, 1.05, calm);
+        r = t[0]; g = t[1]; b = t[2];
+    }
+    return vec3(r, g, b);
+}
 
-  // ====== 원본 Firewall ======
-  vec4 O = vec4(0.0);
-  float z = 0.0;
-  float d = 0.0;
-  float i = 0.0;
+void main() {
+    vec2 I = vUV * iResolution.xy;
 
-  for (O *= i; i++ < 2e1; ) {
-    // 원본 레이 계산 그대로 (중앙정렬 변경 없음)
-    vec3 p = z * normalize(vec3(I+I, 0.0) - iResolution.xyx) + 0.1;
+    // pending → calm 스케일
+    float calm = clamp(uPending, 0.0, 1.0);
 
-    // Polar 좌표 변환 (원본)
-    p = vec3(
-      atan(p.z += 9.0, p.x + 0.1) * 2.0,
-      0.6*p.y + t + t,            // 시간 항은 t(속도만 느려짐)
-      length(p.xz) - 3.0
-    );
+    // === 배경 소음 데드존 적용 ===
+    float level = max(0.0, uLevel - 0.05);
+    level /= (1.0 - 0.05);
 
-    // 난류 (위상에 speakPhase만 아주 살짝 추가)
-    for (d = 0.0; d++ < 7.0; ) {
-      p += sin(p.yzx * d + (t + speakPhase) + 0.5*i) / d;
+    // 시간 속도
+    float t = uTimeEff;
+
+    // 난류 위상
+    float speakPhaseActive = 0.05 * (level + 0.5*uVox[1]);
+    float speakPhase = mix(speakPhaseActive, 0.0, calm);
+
+    // 밝기 게인
+    float colorGainActive = 1.0 + 1.5*level + 0.5*uVox[3];
+    float colorGain = mix(colorGainActive, 1.05, calm);
+
+    // 누적 색상
+    vec3 col = vec3(0.0);
+    float z = 0.0;
+    float d = 0.0;
+
+    // Raymarch loop
+    for (float i = 0.0; i < 20.0; i++) {
+        vec3 p = z * normalize(vec3(I+I, 0.0) - iResolution.xyx) + 0.1;
+
+        p = vec3(
+            atan(p.z += 9.0, p.x + 0.1) * 2.0,
+            0.6*p.y + t + t,
+            length(p.xz) - 3.0
+        );
+
+        for (d = 0.0; d++ < 7.0; ) {
+            p += sin(p.yzx * d + (t + speakPhase) + 0.5*i) / d;
+        }
+
+        z += d = 0.4 * length(vec4(0.3*cos(p) - 0.3, p.z));
+
+        col += colorGain * (1.0 + cos(p.y + i*0.4 + vec3(6.0,1.0,2.0))) / d;
     }
 
-    // 거리장 (원본)
-    z += d = 0.4 * length(vec4(0.3*cos(p) - 0.3, p.z));
+    col *= mix(1.0, 0.9, calm);
+    col = tanh(col*col / 6000.0);
 
-    // 색상 (원본 + colorPhase/색상게인)
-    O += colorGain * (1.0 + cos(p.y + i*0.4 + vec4(6.0,1.0,2.0,0.0) + colorPhase)) / d;
-  }
+    // === Hue rotation 적용 (다이나믹 강화 + calm 시도 완전 억제X) ===
+    float hueAngleDynamic = ((level - 0.5) * 3.14159 * 0.6)  // 기존 대비 2배 회전량
+                          + iTime * (0.08 + 0.08*level);      // 시간에 의한 변화도 강화
+    // calm일 때 30%만 남김
+    float hueAngle = mix(hueAngleDynamic, hueAngleDynamic * 0.3, calm);
 
-  // 대기 중엔 살짝 디밍 (너무 티나지 않게)
-  O *= mix(1.0, 0.9, calm);
+    vec3 hsl = rgb2hsl(col);
+    hsl.x = fract(hsl.x + hueAngle / (2.0 * 3.14159));
+    vec3 finalColor = hsl2rgb(hsl);
 
-  // 톤매핑 (원본)
-  O = tanh(O*O / 6000.0);
-  fragColor = O;
-}`;
+    fragColor = vec4(finalColor, 1.0);
+}
+
+`;
+
+
+
 
   // ===== GL program =====
   function compile(type, src){
