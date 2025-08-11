@@ -1,0 +1,34 @@
+{
+  "name": "interaction-demo",
+  "version": "1.0.0",
+  "description": "WebGL2 Shader Demo with React Three Fiber - 음성 반응형 시각화",
+  "type": "module",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fifteenmania/interaction-mic.git"
+  },
+  "keywords": ["webgl", "shader", "audio", "visualization", "react", "threejs"],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/fifteenmania/interaction-mic/issues"
+  },
+  "homepage": "https://github.com/fifteenmania/interaction-mic#readme",
+  "dependencies": {
+    "three": "^0.160.0",
+    "@react-three/fiber": "^8.15.0",
+    "@react-three/drei": "^9.88.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "vite": "^5.0.0"
+  }
+}

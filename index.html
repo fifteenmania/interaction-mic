@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGL2 Shader Demo</title>
+    <title>WebGL2 Shader Demo - React Three Fiber</title>
     <style>
         body {
             margin: 0;
@@ -13,11 +13,9 @@
             font-family: Arial, sans-serif;
         }
         
-        #c {
-            display: block;
+        #root {
             width: 100vw;
             height: 100vh;
-            cursor: none;
         }
         
         .info {
@@ -49,9 +47,24 @@
             border-radius: 5px;
             margin: 10px 0;
         }
+        
+        .hint {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font: 600 16px/1.4 system-ui, sans-serif;
+            color: #fff;
+            background: rgba(0,0,0,0.35);
+            padding: 12px 16px;
+            border-radius: 10px;
+            z-index: 9999;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
-    <script src="shader.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
 </body>
 </html> 
