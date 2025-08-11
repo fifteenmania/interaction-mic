@@ -36,121 +36,74 @@ uniform float uTimeEff;
 uniform float uLevel;     // 0~약 0.6 (RMS)
 uniform float uVox[4];    // [저역(F0), formant1, formant2, sibilance]
 
-// 챗봇 pending 상태 (JS에서 EMA로 부드럽게 보냄: 0~1)
+// 챗봇 pending 상태 (0~1)
 uniform float uPending;
 
-// RGB → HSL 변환
-vec3 rgb2hsl(vec3 c) {
-    float maxc = max(max(c.r, c.g), c.b);
-    float minc = min(min(c.r, c.g), c.b);
-    float l = (maxc + minc) * 0.5;
-    if (maxc == minc) return vec3(0.0, 0.0, l);
-    float d = maxc - minc;
-    float s = l > 0.5 ? d / (2.0 - maxc - minc) : d / (maxc + minc);
-    float h = 0.0;
-    if (maxc == c.r) h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0);
-    else if (maxc == c.g) h = (c.b - c.r) / d + 2.0;
-    else h = (c.r - c.g) / d + 4.0;
-    h /= 6.0;
-    return vec3(h, s, l);
+vec3 hueRotate(vec3 color, float angle) {
+    float c = cos(angle);
+    float s = sin(angle);
+    mat3 m = mat3(
+        0.299 + 0.701*c + 0.168*s,
+        0.587 - 0.587*c + 0.330*s,
+        0.114 - 0.114*c - 0.497*s,
+
+        0.299 - 0.299*c - 0.328*s,
+        0.587 + 0.413*c + 0.035*s,
+        0.114 - 0.114*c + 0.292*s,
+
+        0.299 - 0.300*c + 1.250*s,
+        0.587 - 0.588*c - 1.050*s,
+        0.114 + 0.886*c - 0.203*s
+    );
+    return clamp(m * color, 0.0, 1.0);
 }
 
-// HSL → RGB 변환
-vec3 hsl2rgb(vec3 c) {
-    float h = c.x, s = c.y, l = c.z;
-    float r, g, b;
-
-    if (s == 0.0) {
-        r = g = b = l;
-    } else {
-        float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
-        float p = 2.0 * l - q;
-        float hk = fract(h);
-
-        float t[3];
-        t[0] = hk + 1.0/3.0;
-        t[1] = hk;
-        t[2] = hk - 1.0/3.0;
-
-        for (int i = 0; i < 3; i++) {
-            if (t[i] < 0.0) t[i] += 1.0;
-            if (t[i] > 1.0) t[i] -= 1.0;
-            if (t[i] < 1.0/6.0) t[i] = p + (q - p) * 6.0 * t[i];
-            else if (t[i] < 0.5) t[i] = q;
-            else if (t[i] < 2.0/3.0) t[i] = p + (q - p) * (2.0/3.0 - t[i]) * 6.0;
-            else t[i] = p;
-        }
-
-        r = t[0]; g = t[1]; b = t[2];
-    }
-    return vec3(r, g, b);
-}
-
-void main() {
+void main(){
     vec2 I = vUV * iResolution.xy;
-
-    // pending → calm 스케일
     float calm = clamp(uPending, 0.0, 1.0);
-
-    // === 배경 소음 데드존 적용 ===
-    float level = max(0.0, uLevel - 0.05);
-    level /= (1.0 - 0.05);
-
-    // 시간 속도
     float t = uTimeEff;
 
-    // 난류 위상
-    float speakPhaseActive = 0.05 * (level + 0.5*uVox[1]);
-    float speakPhase = mix(speakPhaseActive, 0.0, calm);
+    // ------------------------------
+    // Hue 회전 위상 계산 (항상 연속)
+    // ------------------------------
+    float huePhase = iTime * 0.15; // 기본 회전 속도
+    float micHue = (uLevel + 0.5*uVox[1]) * 3.14159 * 0.4; // 마이크 기반 추가
+    float hueAngle = huePhase + micHue * (1.0 - 0.7 * calm); // 진폭만 calm에 영향
 
-    // 밝기 게인
-    float colorGainActive = 1.0 + 1.5*level + 0.5*uVox[3];
+    // 밝기/난류 위상
+    float speakPhaseActive = 0.05 * (uLevel + 0.5*uVox[1]);
+    float speakPhase = mix(speakPhaseActive, 0.0, calm);
+    float colorGainActive = 1.0 + 1.5*uLevel + 0.5*uVox[3];
     float colorGain = mix(colorGainActive, 1.05, calm);
 
-    // 누적 색상
+    // ------------------------------
+    // Raymarch
+    // ------------------------------
     vec3 col = vec3(0.0);
     float z = 0.0;
     float d = 0.0;
-
-    // Raymarch loop
     for (float i = 0.0; i < 20.0; i++) {
         vec3 p = z * normalize(vec3(I+I, 0.0) - iResolution.xyx) + 0.1;
-
         p = vec3(
             atan(p.z += 9.0, p.x + 0.1) * 2.0,
             0.6*p.y + t + t,
             length(p.xz) - 3.0
         );
-
         for (d = 0.0; d++ < 7.0; ) {
             p += sin(p.yzx * d + (t + speakPhase) + 0.5*i) / d;
         }
-
         z += d = 0.4 * length(vec4(0.3*cos(p) - 0.3, p.z));
-
-        col += colorGain * (1.0 + cos(p.y + i*0.4 + vec3(6.0,1.0,2.0))) / d;
+        col += colorGain * (1.0 + cos(p.y + i*0.4 + vec3(6.0, 1.0, 2.0))) / d;
     }
 
     col *= mix(1.0, 0.9, calm);
-    col = tanh(col*col / 6000.0);
 
-    // === Hue rotation 적용 (다이나믹 강화 + calm 시도 완전 억제X) ===
-    float hueAngleDynamic = ((level - 0.5) * 3.14159 * 0.6)  // 기존 대비 2배 회전량
-                          + iTime * (0.08 + 0.08*level);      // 시간에 의한 변화도 강화
-    // calm일 때 30%만 남김
-    float hueAngle = mix(hueAngleDynamic, hueAngleDynamic * 0.3, calm);
-
-    vec3 hsl = rgb2hsl(col);
-    hsl.x = fract(hsl.x + hueAngle / (2.0 * 3.14159));
-    vec3 finalColor = hsl2rgb(hsl);
+    // 톤매핑 + Hue 회전 적용
+    vec3 finalColor = tanh(col*col / 6000.0);
+    finalColor = hueRotate(finalColor, hueAngle);
 
     fragColor = vec4(finalColor, 1.0);
-}
-
-`;
-
-
-
+}`;
 
   // ===== GL program =====
   function compile(type, src){
