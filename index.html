@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGL2 Shader Demo</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        #c {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            cursor: none;
+        }
+        
+        .info {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            z-index: 1000;
+        }
+        
+        .info h3 {
+            margin: 0 0 10px 0;
+            color: #00ff88;
+        }
+        
+        .info p {
+            margin: 5px 0;
+            line-height: 1.4;
+        }
+        
+        .error {
+            color: #ff4444;
+            background: rgba(255,68,68,0.2);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <script src="shader.js"></script>
+</body>
+</html> 
